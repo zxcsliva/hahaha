@@ -1,0 +1,55 @@
+# Логи
+*.log
+bot.log
+
+# Config с токеном (если ты его создаешь локально)
+config_local.py
+local_config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Временные файлы
+*.tmp
+*.bak
+*~
+
+# Tests
+.pytest_cache/
+.coverage
+
+# Virtual environments (если клонируешь)
+venv/
+env/
