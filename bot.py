@@ -29,9 +29,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(welcome_text)
 
-async def handle_problem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик сообщений о проблемах"""
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Главный обработчик всех сообщений"""
     user_message = update.message.text.lower()
+    
+    # Проверяем, ждемо ли мы локацию
+    if context.user_data.get('waiting_for_location'):
+        # Пользователь отвечает на вопрос про локацию
+        location = update.message.text
+        
+        # Регистрируем запрос
+        await update.message.chat.send_action(ChatAction.TYPING)
+        
+        registration_text = (
+            f"✅ ЗАПРОС ЗАРЕГИСТРИРОВАН! ✅\n\n"
+            f"📍 Локация: {location}\n"
+            f"🔧 Проблема: {context.user_data['problem_text']}\n"
+            f"🎫 Номер тикета: #{update.message.from_user.id}\n\n"
+            f"Обрабатываю запрос... СТОЯЯААК... 🤖⚡"
+        )
+        await update.message.reply_text(registration_text)
+        
+        # Небольшая пауза для эффекта
+        import asyncio
+        await asyncio.sleep(random.randint(2, 4))
+        
+        # Отправляем смешное решение
+        await update.message.chat.send_action(ChatAction.TYPING)
+        solution = random.choice(ALL_SOLUTIONS)
+        
+        solution_text = (
+            "💡 РЕШЕНИЕ НАЙДЕНО! 💡\n\n"
+            f"{solution}\n\n"
+            "Если не сработает - иди ныть в соседний отдел! 😄"
+        )
+        await update.message.reply_text(solution_text)
+        
+        # Очищаем контекст
+        context.user_data.clear()
+        return
     
     # Проверяем, есть ли в сообщении ключевые слова о проблемах
     problem_keywords = [
@@ -62,51 +98,9 @@ async def handle_problem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     await update.message.reply_text(location_request)
     
-    # Сохраняем информацию в контексте
-    context.user_data['has_problem'] = True
+    # Сохраняем информацию в контексте и ставим флаг ожидания
+    context.user_data['waiting_for_location'] = True
     context.user_data['problem_text'] = user_message
-
-async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик ответа с местоположением"""
-    
-    # Проверяем, был ли запрос о местоположении
-    if not context.user_data.get('has_problem'):
-        await update.message.reply_text(
-            "Сначала расскажи о своей проблеме! 🤨"
-        )
-        return
-    
-    location = update.message.text
-    
-    # Регистрируем запрос
-    await update.message.chat.send_action(ChatAction.TYPING)
-    
-    registration_text = (
-        f"✅ ЗАПРОС ЗАРЕГИСТРИРОВАН! ✅\n\n"
-        f"📍 Локация: {location}\n"
-        f"🔧 Проблема: {context.user_data['problem_text']}\n"
-        f"🎫 Номер тикета: #{update.message.from_user.id}\n\n"
-        f"Обрабатываю запрос... СТОЯЯААК... 🤖⚡"
-    )
-    await update.message.reply_text(registration_text)
-    
-    # Небольшая пауза для эффекта
-    import asyncio
-    await asyncio.sleep(random.randint(2, 4))
-    
-    # Отправляем смешное решение
-    await update.message.chat.send_action(ChatAction.TYPING)
-    solution = random.choice(ALL_SOLUTIONS)
-    
-    solution_text = (
-        "💡 РЕШЕНИЕ НАЙДЕНО! 💡\n\n"
-        f"{solution}\n\n"
-        "Если не сработает - иди ныть в соседний отдел! 😄"
-    )
-    await update.message.reply_text(solution_text)
-    
-    # Очищаем контекст
-    context.user_data.clear()
 
 def main() -> None:
     """Запуск бота"""
@@ -132,9 +126,8 @@ def main() -> None:
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     
-    # Обработчик всех сообщений
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_problem))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_location))
+    # Обработчик всех текстовых сообщений (включая локацию и проблемы)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Запускаем бота
     logger.info("🤖 БОТ ЗАПУЩЕН! Жми Ctrl+C для остановки.")
