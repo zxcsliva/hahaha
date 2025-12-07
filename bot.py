@@ -289,8 +289,7 @@ async def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_new_answer)
             ]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        allow_user_defined_callback_data=True
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
     
     # Обработчик состояний для основного диалога (проблема -> локация)
@@ -301,8 +300,7 @@ async def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_location)
             ]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        allow_user_defined_callback_data=True
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
     
     # Добавляем обработчики
