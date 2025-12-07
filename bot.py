@@ -310,29 +310,25 @@ async def main():
     application.add_handler(add_answer_handler)
     application.add_handler(conv_handler)
     
-    logger.info("🤖 БОТ ЗАПУЩЕН! Жми Ctrl+C для остановки.")
+    logger.info("🤖 БОТ ЗАПУЩЕН! Жди сообщений...")
     
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Используем start_polling вместо run_polling для совместимости с PythonAnywhere
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
 
 
 def run_bot():
-    """Запуск бота"""
+    """Запуск бота без asyncio.run() для избежания конфликтов event loop"""
     try:
-        asyncio.run(main())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
         logger.info("Бот остановлен")
         print("Бот остановлен")
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):
-            # Для PythonAnywhere используем другой подход
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(main())
-            finally:
-                loop.close()
-        else:
-            raise
+    finally:
+        loop.close()
 
 
 if __name__ == '__main__':
