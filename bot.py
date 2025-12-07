@@ -312,9 +312,18 @@ async def main():
     
     logger.info("🤖 БОТ ЗАПУЩЕН! Жди сообщений...")
     
-    # Используем run_polling - это правильный способ для standalone скрипта
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Используем run_polling с close_loop=False
+    await application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Проверяем есть ли уже running loop (на PythonAnywhere есть)
+    try:
+        loop = asyncio.get_running_loop()
+        # Есть running loop - это PythonAnywhere, запускаем как task
+        task = loop.create_task(main())
+        # Ждем завершения
+        loop.run_until_complete(task)
+    except RuntimeError:
+        # Нет running loop - это локальный запуск, используем asyncio.run()
+        asyncio.run(main())
