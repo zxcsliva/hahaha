@@ -312,22 +312,9 @@ async def main():
     
     logger.info("🤖 БОТ ЗАПУЩЕН! Жди сообщений...")
     
-    # Инициализируем и стартуем приложение
-    await application.initialize()
-    await application.start()
-    
-    # Используем start_polling вместо run_polling для совместимости с PythonAnywhere
-    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    # Используем run_polling - это правильный способ для standalone скрипта
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':
-    # Пытаемся получить текущий event loop
-    try:
-        loop = asyncio.get_running_loop()
-        # Если есть running loop, запускаем как корутину
-        import asyncio as asyncio_module
-        # Для PythonAnywhere создаем task
-        asyncio_module.ensure_future(main())
-    except RuntimeError:
-        # Если нет running loop, создаем новый (для локального запуска)
-        asyncio.run(main())
+    asyncio.run(main())
