@@ -315,5 +315,25 @@ async def main():
     await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
+def run_bot():
+    """Запуск бота"""
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен")
+        print("Бот остановлен")
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            # Для PythonAnywhere используем другой подход
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(main())
+            finally:
+                loop.close()
+        else:
+            raise
+
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    run_bot()
