@@ -67,6 +67,7 @@ def save_custom_answers(answers):
 CUSTOM_ANSWERS = load_custom_answers()
 AUTHORS = load_authors()
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
     welcome_text = (
