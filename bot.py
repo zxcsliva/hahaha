@@ -139,7 +139,12 @@ def main() -> None:
     # Запускаем бота
     logger.info("🤖 БОТ ЗАПУЩЕН! Жми Ctrl+C для остановки.")
     print("🤖 БОТ ЗАПУЩЕН! Жми Ctrl+C для остановки.")
-    application.run_polling()
+    
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен")
+        print("Бот остановлен")
 
 if __name__ == '__main__':
     main()
