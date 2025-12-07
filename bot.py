@@ -317,4 +317,17 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Пытаемся получить текущий event loop (нужно для PythonAnywhere)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Если нет running loop, создаем новый (для локального запуска)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # Запускаем main
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен")
+        print("Бот остановлен")
