@@ -9,6 +9,7 @@ import random
 import os
 import asyncio
 import json
+import sys
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.constants import ChatAction
@@ -316,9 +317,37 @@ async def main():
     
     logger.info("🤖 БОТ ЗАПУЩЕН! Жди сообщений...")
     
-    # ПРОСТО ЗАПУСКАЕМ POLLING - никаких проверок
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Инициализируем и запускаем
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    
+    # Блокируем выполнение на вечно (пока бот не будет остановлен)
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен")
+        await application.stop()
+    except Exception as e:
+        logger.error(f"Ошибка: {e}")
+        await application.stop()
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Проверяем есть ли уже running loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Нет running loop - создаем новый
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # Запускаем main как task
+    try:
+        loop.run_until_complete(main())
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            # На PythonAnywhere loop уже работает, просто создаем task
+            asyncio.ensure_future(main())
+        else:
+            raise
