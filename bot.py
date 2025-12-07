@@ -1,10 +1,17 @@
 import logging
 import random
 import os
+import asyncio
+import json
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.constants import ChatAction
 from solutions import ALL_SOLUTIONS
+
+# Состояния диалога
+WAITING_FOR_LOCATION = 1
+WAITING_FOR_NEW_ANSWER = 2
+WAITING_FOR_ANSWER_CONFIRM = 3
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,7 +23,43 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-logger.info("Бот запускается...")
+
+# Файлы для хранения данных
+CUSTOM_ANSWERS_FILE = 'custom_answers.json'
+AUTHORS_FILE = 'authors.json'
+
+def load_custom_answers():
+    """Загружает пользовательские ответы из файла"""
+    try:
+        if os.path.exists(CUSTOM_ANSWERS_FILE):
+            with open(CUSTOM_ANSWERS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке пользовательских ответов: {e}")
+    return []
+
+def load_authors():
+    """Загружает авторов решений"""
+    try:
+        if os.path.exists(AUTHORS_FILE):
+            with open(AUTHORS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке авторов: {e}")
+    return ["Аноним Безымянов"]
+
+def save_custom_answers(answers):
+    """Сохраняет пользовательские ответы в файл"""
+    try:
+        with open(CUSTOM_ANSWERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(answers, f, ensure_ascii=False, indent=2)
+        logger.info(f"Сохранено {len(answers)} пользовательских ответов")
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении ответов: {e}")
+
+# Загружаем данные при старте
+CUSTOM_ANSWERS = load_custom_answers()
+AUTHORS = load_authors()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
@@ -25,119 +68,254 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Я - ЛЕГЕНДАРНЫЙ БОТ ТЕХНИЧЕСКОЙ ПОДДЕРЖКИ!\n"
         "Просто напиши мне о своей проблеме, например:\n"
         '"У меня не работает компьютер"\n\n'
+        "Команды:\n"
+        "/add_answer - добавить свой смешный ответ\n"
+        "/stats - статистика ответов\n"
+        "/help - помощь\n\n"
         "И я помогу тебе с блеском (ну, попытаюсь)! 😎"
     )
     await update.message.reply_text(welcome_text)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Главный обработчик всех сообщений"""
+
+async def add_answer_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начало процесса добавления нового ответа"""
+    await update.message.reply_text(
+        "📝 ДОБАВЛЕНИЕ НОВОГО СМЕШНОГО ОТВЕТА\n\n"
+        "Напиши смешной ответ который должен дать бот в качестве решения:\n"
+        "(Можно использовать эмодзи и форматирование)\n\n"
+        "Пример: 'Выключи это и включи обратно, гений! 🤦'"
+    )
+    return WAITING_FOR_NEW_ANSWER
+
+
+async def get_new_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получение нового ответа"""
+    new_answer = update.message.text
+    context.user_data['new_answer'] = new_answer
+    
+    await update.message.reply_text(
+        f"✅ Вот что я получил:\n\n"
+        f'"{new_answer}"\n\n'
+        f"Это правильно? Напиши 'да' чтобы добавить или 'отмена' чтобы отменить"
+    )
+    return WAITING_FOR_ANSWER_CONFIRM
+
+
+async def confirm_new_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Подтверждение нового ответа"""
+    response = update.message.text.lower().strip()
+    
+    if response == 'да':
+        new_answer = context.user_data['new_answer']
+        
+        # Добавляем в оперативную память
+        ALL_SOLUTIONS.append(new_answer)
+        CUSTOM_ANSWERS.append(new_answer)
+        
+        # Сохраняем в файл
+        save_custom_answers(CUSTOM_ANSWERS)
+        
+        await update.message.reply_text(
+            f"🎉 ОТВЕТ ДОБАВЛЕН!\n\n"
+            f"Теперь у бота {len(ALL_SOLUTIONS)} вариантов ответов!\n"
+            f"Твой ответ будет использоваться в решениях! 😎\n\n"
+            f"Можешь написать мне еще про проблему или добавить еще ответ (/add_answer)"
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Добавление отменено.\n\n"
+            "Напиши мне про проблему или используй /add_answer чтобы добавить другой ответ"
+        )
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показывает статистику"""
+    total = len(ALL_SOLUTIONS)
+    custom = len(CUSTOM_ANSWERS)
+    built_in = total - custom
+    
+    stats_text = (
+        f"📊 СТАТИСТИКА ОТВЕТОВ\n\n"
+        f"Всего ответов: {total}\n"
+        f"├─ Встроенных: {built_in}\n"
+        f"└─ Добавлено пользователями: {custom}\n\n"
+        f"Каждый раз бот случайно выбирает один из {total} вариантов! 🎲"
+    )
+    
+    if CUSTOM_ANSWERS:
+        stats_text += f"\n\n📝 ПОСЛЕДНИЕ ТВОИ ОТВЕТЫ:\n"
+        for i, answer in enumerate(CUSTOM_ANSWERS[-5:], 1):  # Показываем последние 5
+            stats_text += f"{i}. {answer[:50]}...\n" if len(answer) > 50 else f"{i}. {answer}\n"
+    
+    await update.message.reply_text(stats_text)
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Помощь"""
+    help_text = (
+        "🆘 ПОМОЩЬ\n\n"
+        "Как пользоваться ботом:\n\n"
+        "1️⃣ Напиши о проблеме:\n"
+        "   'У меня не работает компьютер'\n"
+        "   'Монитор не включается'\n"
+        "   'Ноутбук виснет'\n\n"
+        "2️⃣ Бот спросит где ты сидишь\n\n"
+        "3️⃣ Ответь локацией:\n"
+        "   'Офис, этаж 2, стол 3'\n"
+        "   'Дома в спальне'\n\n"
+        "4️⃣ Получи смешное решение! 😂\n\n"
+        "Команды:\n"
+        "/start - начало\n"
+        "/add_answer - добавить свой ответ\n"
+        "/stats - статистика\n"
+        "/help - эта помощь"
+    )
+    await update.message.reply_text(help_text)
+
+
+async def handle_problem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик сообщений о проблемах"""
     user_message = update.message.text.lower()
     
-    # Проверяем, ждемо ли мы локацию
-    if context.user_data.get('waiting_for_location'):
-        # Пользователь отвечает на вопрос про локацию
-        location = update.message.text
-        
-        # Регистрируем запрос
-        await update.message.chat.send_action(ChatAction.TYPING)
-        
-        registration_text = (
-            f"✅ ЗАПРОС ЗАРЕГИСТРИРОВАН! ✅\n\n"
-            f"📍 Локация: {location}\n"
-            f"🔧 Проблема: {context.user_data['problem_text']}\n"
-            f"🎫 Номер тикета: #{update.message.from_user.id}\n\n"
-            f"Обрабатываю запрос... СТОЯЯААК... 🤖⚡"
-        )
-        await update.message.reply_text(registration_text)
-        
-        # Небольшая пауза для эффекта
-        import asyncio
-        await asyncio.sleep(random.randint(2, 4))
-        
-        # Отправляем смешное решение
-        await update.message.chat.send_action(ChatAction.TYPING)
-        solution = random.choice(ALL_SOLUTIONS)
-        
-        solution_text = (
-            "💡 РЕШЕНИЕ НАЙДЕНО! 💡\n\n"
-            f"{solution}\n\n"
-            "Если не сработает - иди ныть в соседний отдел! 😄"
-        )
-        await update.message.reply_text(solution_text)
-        
-        # Очищаем контекст
-        context.user_data.clear()
-        return
+    # Ключевые слова для обнаружения проблемы
+    problem_keywords = ['не работает', 'сломан', 'ошибка', 'глюк', 'криво', 'проблема', 'багован', 'упал', 'повис', 'не включ', 'не открыв', 'не загружается']
     
-    # Проверяем, есть ли в сообщении ключевые слова о проблемах
-    problem_keywords = [
-        "не работает",
-        "сломан",
-        "ошибка",
-        "не включается",
-        "виснет",
-        "тормозит",
-        "не открывается",
-        "проблема"
-    ]
+    # Проверяем наличие ключевых слов
+    has_problem = any(keyword in user_message for keyword in problem_keywords)
     
-    if not any(keyword in user_message for keyword in problem_keywords):
+    if has_problem:
+        # Сохраняем текст проблемы
+        context.user_data['problem_text'] = update.message.text
+        
+        # Отправляем уведомление о проблеме
         await update.message.reply_text(
-            "Эй, ты мне о проблеме расскажи! Напиши что-то типа 'У меня не работает компьютер' 🤔"
+            "🚨 ИНЦИДЕНТ ОБНАРУЖЕН! 🚨\n\n"
+            "Дай-ка я уточню... Где именно ты сидишь?\n"
+            "Скажи локацию, например: 'Главный офис, этаж 2, стол 3'"
         )
+        
+        # Переходим в состояние ожидания локации
+        return WAITING_FOR_LOCATION
+    else:
+        # Если это не проблема, отправляем стандартное сообщение
+        await update.message.reply_text(
+            "Эй! 👋\n\n"
+            "Это похоже не на проблему с компьютером...\n"
+            "Расскажи мне о своей беде! 😅\n\n"
+            "Или используй /add_answer чтобы добавить смешный ответ"
+        )
+        return None
+
+
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик сообщения о локации"""
+    location = update.message.text
+    problem_text = context.user_data.get('problem_text', 'Неизвестная проблема')
+    
+    # Показываем статус обработки
+    await update.message.chat.send_action(ChatAction.TYPING)
+    
+    # Регистрируем запрос
+    registration_text = (
+        "✅ ЗАПРОС ЗАРЕГИСТРИРОВАН! ✅\n\n"
+        f"📍 Локация: {location}\n"
+        f"🔧 Проблема: {problem_text}\n"
+        f"🎫 Номер тикета: #{update.message.from_user.id}\n\n"
+        "Обрабатываю запрос... СТОЯЯААК... 🤖⚡"
+    )
+    await update.message.reply_text(registration_text)
+    
+    # Небольшая пауза для драматизма
+    await asyncio.sleep(2)
+    
+    # Выбираем случайное решение (включая пользовательские)
+    solution = random.choice(ALL_SOLUTIONS)
+    author = random.choice(AUTHORS)
+    
+    solution_text = (
+        "💡 РЕШЕНИЕ НАЙДЕНО! 💡\n\n"
+        f"{solution}\n\n"
+        "─────────────────────\n"
+        f"✍️ Автор решения: {author}\n"
+        "─────────────────────\n\n"
+        "Спасибо что обратился! До новых встреч! 😎\n\n"
+        "Хочешь добавить свой смешной ответ? /add_answer"
+    )
+    await update.message.reply_text(solution_text)
+    
+    # Очищаем данные пользователя
+    context.user_data.clear()
+    
+    # Возвращаемся в начальное состояние
+    return ConversationHandler.END
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отмена диалога"""
+    await update.message.reply_text(
+        "❌ Диалог отменен.\n\n"
+        "Напиши что-нибудь еще! 👋"
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def main():
+    """Главная функция"""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    
+    if not token:
+        print("❌ ОШИБКА: Переменная окружения TELEGRAM_BOT_TOKEN не установлена!")
+        print("Установи переменную и попробуй снова!")
+        logger.error("TELEGRAM_BOT_TOKEN not found")
         return
     
-    # Запрашиваем местоположение
-    await update.message.chat.send_action(ChatAction.TYPING)
-    location_request = (
-        "🚨 ВНИМАНИЕ! ИНЦИДЕНТ ОБНАРУЖЕН! 🚨\n\n"
-        "Окей, расскажи мне, ГДЕ ты сидишь?\n"
-        "Например: 'Главный офис, этаж 2, стол 3'\n"
-        "Или: 'Дома в спальне'\n\n"
-        "Давай, не стесняйся! 📍"
-    )
-    await update.message.reply_text(location_request)
-    
-    # Сохраняем информацию в контексте и ставим флаг ожидания
-    context.user_data['waiting_for_location'] = True
-    context.user_data['problem_text'] = user_message
-
-def main() -> None:
-    """Запуск бота"""
-    # Получай токен из переменной окружения или файла конфига
-    TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-    
-    if not TOKEN:
-        # Если нет переменной окружения, прочитай из файла config.py
-        try:
-            from config import TOKEN as CONFIG_TOKEN
-            TOKEN = CONFIG_TOKEN
-        except ImportError:
-            logger.error("❌ ОШИБКА: Токен не найден!")
-            logger.error("Установи переменную окружения TELEGRAM_BOT_TOKEN")
-            logger.error("Или создай файл config.py с переменной TOKEN")
-            raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
-    
-    logger.info(f"✅ Токен найден: {TOKEN[:10]}...")
+    logger.info(f"✅ Токен найден. Всего ответов: {len(ALL_SOLUTIONS)}")
     
     # Создаем приложение
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(token).build()
     
-    # Обработчики команд
+    # Обработчик состояний для добавления ответов
+    add_answer_handler = ConversationHandler(
+        entry_points=[CommandHandler('add_answer', add_answer_start)],
+        states={
+            WAITING_FOR_NEW_ANSWER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_new_answer)
+            ],
+            WAITING_FOR_ANSWER_CONFIRM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_new_answer)
+            ]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        allow_user_defined_callback_data=True
+    )
+    
+    # Обработчик состояний для основного диалога (проблема -> локация)
+    conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_problem)],
+        states={
+            WAITING_FOR_LOCATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_location)
+            ]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        allow_user_defined_callback_data=True
+    )
+    
+    # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("stats", show_stats))
+    application.add_handler(add_answer_handler)
+    application.add_handler(conv_handler)
     
-    # Обработчик всех текстовых сообщений (включая локацию и проблемы)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Запускаем бота
     logger.info("🤖 БОТ ЗАПУЩЕН! Жми Ctrl+C для остановки.")
-    print("🤖 БОТ ЗАПУЩЕН! Жми Ctrl+C для остановки.")
     
-    try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-    except KeyboardInterrupt:
-        logger.info("Бот остановлен")
-        print("Бот остановлен")
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
