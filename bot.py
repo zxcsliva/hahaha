@@ -50,9 +50,15 @@ def load_authors():
     try:
         if os.path.exists(AUTHORS_FILE):
             with open(AUTHORS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                authors = json.load(f)
+                logger.info(f"✅ Загружено {len(authors)} авторов из {AUTHORS_FILE}")
+                return authors
+        else:
+            logger.warning(f"⚠️ Файл {AUTHORS_FILE} не найден в {os.getcwd()}")
     except Exception as e:
         logger.error(f"Ошибка при загрузке авторов: {e}")
+    
+    logger.info("Используется дефолтный автор: Аноним Безымянов")
     return ["Аноним Безымянов"]
 
 def save_custom_answers(answers):
